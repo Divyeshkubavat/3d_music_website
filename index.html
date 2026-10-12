@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>waxwarp: scroll the groove</title>
+  <meta name="description" content="An endless tunnel of records. Scroll, and the one in the middle plays." />
+  <meta name="theme-color" content="#2a1f8f" />
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;800&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
+</head>
+<body class="home">
+  <div id="big" aria-hidden="true"></div>
+  <canvas id="gl"></canvas>
+
+  <header class="top">
+    <div class="brand">waxwarp<i>∞</i></div>
+    <nav id="vibes" aria-label="Pick a sound"></nav>
+  </header>
+
+  <section id="hero">
+    <h1><span>wax</span><span class="o">warp</span></h1>
+    <p class="lead">Every song is a record in an endless tunnel. Scroll, and the one in the middle plays.</p>
+    <div class="cta">
+      <button id="start" disabled>Loading the groove</button>
+      <span class="or">or just scroll down</span>
+    </div>
+    <p class="fine" id="note"></p>
+  </section>
+
+  <aside class="counter" aria-hidden="true">
+    <div class="num" id="num">001</div>
+    <div class="bar"><span id="numbar"></span></div>
+    <div class="inf">and still going</div>
+  </aside>
+
+  <section class="info" aria-live="polite">
+    <h2 class="sr" id="title"></h2>
+    <div class="meta" id="meta"></div>
+    <p id="artist"></p>
+    <p id="album"></p>
+  </section>
+
+  <div class="hint" id="hint" aria-hidden="true">
+    <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+    <span>Scroll, swipe or press ↓</span>
+  </div>
+
+  <footer class="player" id="player">
+    <div class="seek" id="seek" role="slider" aria-label="Seek" tabindex="0"><i id="fill"></i></div>
+    <div class="row">
+      <span class="time" id="tcur">0:00</span>
+      <div class="ctrls">
+        <button id="like" aria-label="Like"><svg viewBox="0 0 24 24"><path d="M12 21s-7.5-4.6-9.6-9.2C.9 8.4 2.7 4.5 6.4 4.5c2 0 3.5 1.1 4.3 2.4l1.3 1.8 1.3-1.8c.8-1.3 2.3-2.4 4.3-2.4 3.7 0 5.5 3.9 4 7.3C19.5 16.4 12 21 12 21z"/></svg></button>
+        <button id="prev" aria-label="Previous"><svg viewBox="0 0 24 24"><path d="M6 5v14M19 5L9 12l10 7z"/></svg></button>
+        <button id="play" class="big" aria-label="Play or pause">
+          <svg class="i-play" viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z"/></svg>
+          <svg class="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></svg>
+        </button>
+        <button id="next" aria-label="Next"><svg viewBox="0 0 24 24"><path d="M18 5v14M5 5l10 7-10 7z"/></svg></button>
+        <button id="mute" aria-label="Mute"><svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path class="wave" d="M16 9c1.5 1.5 1.5 4.5 0 6M18.5 6.5c3 3 3 8 0 11"/></svg></button>
+      </div>
+      <span class="time" id="tdur">0:00</span>
+    </div>
+  </footer>
+
+  <div id="loader" class="loader" hidden><i></i><span>Finding more records</span></div>
+  <div id="toast" class="toast" role="status"></div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
