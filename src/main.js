@@ -19,7 +19,7 @@ const root = document.documentElement;
 // target / pos are song indexes. -1 is the home screen, 0 is the first song.
 let target = -1, pos = -1, prevPos = -1, vel = 0;
 let uiIdx = -1, playingIdx = -1, stable = 0, blocked = false, pendingStart = false;
-let gesture = false, anchor = -1, lastInput = 0, drag = null;
+let lastInput = 0, drag = null;
 let hintGone = false, frameN = 0, lastTime = performance.now(), time = 0, fpsAcc = 0, fpsN = 0;
 let playStartTime = 0;
 const mouse = { x: 0, y: 0 };
@@ -49,9 +49,11 @@ function setActive(i) {
   uiIdx = i;
   const clean = (s.name || '').replace(/\(.*?\)|\[.*?\]/g, '').trim() || s.name || 'Untitled';
   els.title.textContent = s.name || 'Untitled';
-  els.big.textContent = clean;
   const n = clean.length;
-  els.big.style.fontSize = n <= 9 ? '19vw' : n <= 16 ? '14vw' : n <= 28 ? '10vw' : '7.5vw';
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+  els.big.style.fontSize = isMobile
+    ? (n <= 9 ? '22vw' : n <= 16 ? '16vw' : n <= 28 ? '12vw' : '9vw')
+    : (n <= 9 ? '19vw' : n <= 16 ? '14vw' : n <= 28 ? '10vw' : '7.5vw');
   els.artist.textContent = s.artists || s.artist;
   els.album.textContent = [s.album, s.year].filter(Boolean).join(', ');
   els.meta.textContent = '';
@@ -90,31 +92,63 @@ addEventListener('pointerdown', unlock, true);
 addEventListener('keydown', unlock, true);
 player.onblocked = () => { blocked = true; playingIdx = -1; toast('Click anywhere to turn the sound on.'); };
 
-// ---------- scrolling ----------
+// ---------- scrolling & navigation ----------
 function seenHint() { if (!hintGone) { hintGone = true; els.hint.classList.add('gone'); } }
-function nudge(d) {
-  if (!feed.songs.length) return;
-  if (!gesture) { gesture = true; anchor = Math.round(target); }
-  target = clamp(target + d, -1, maxIdx());
-  lastInput = performance.now(); seenHint();
-}
-function settle() {
-  const delta = target - anchor;
-  let n = Math.abs(delta) < 0.1 ? 0 : Math.sign(delta) * Math.max(1, Math.round(Math.abs(delta)));
-  n = clamp(n, -8, 8);
-  target = clamp(anchor + n, -1, maxIdx());
-  gesture = false;
-}
+
 function step(n) {
   if (!feed.songs.length) return;
-  if (gesture) settle();
-  target = clamp(Math.round(target) + n, -1, maxIdx()); seenHint();
+  // Step exactly 1 song cleanly
+  const current = Math.round(target);
+  target = clamp(current + n, -1, maxIdx());
+  lastInput = performance.now();
+  seenHint();
 }
+
+// Trackpad & mouse wheel handling with inertia filtering and debounce
+let wheelAcc = 0;
+let wheelCooldownUntil = 0;
+let wheelLastTime = 0;
+let wheelLastDir = 0;
 
 addEventListener('wheel', (e) => {
   e.preventDefault();
-  const dy = e.deltaMode === 1 ? e.deltaY * 32 : e.deltaY;
-  nudge(clamp(dy, -300, 300) * 0.0035);
+  if (!feed.songs.length) return;
+
+  const now = performance.now();
+  let dy = e.deltaY;
+  if (e.deltaMode === 1) dy *= 28; // lines to px
+  else if (e.deltaMode === 2) dy *= 500; // pages to px
+
+  // If user paused for > 160ms, the previous gesture has ended; reset
+  if (now - wheelLastTime > 160) {
+    wheelAcc = 0;
+    wheelCooldownUntil = 0;
+  }
+  wheelLastTime = now;
+
+  const currentDir = Math.sign(dy);
+
+  // If currently in cooldown from trackpad momentum inertia
+  if (now < wheelCooldownUntil) {
+    // If the user intentionally reversed scroll direction, cancel cooldown immediately
+    if (currentDir !== 0 && currentDir !== wheelLastDir) {
+      wheelCooldownUntil = 0;
+      wheelAcc = 0;
+    } else {
+      return; // Ignore momentum inertia events!
+    }
+  }
+
+  wheelAcc += dy;
+  const THRESHOLD = 50; // Smooth threshold to step 1 song
+  if (Math.abs(wheelAcc) >= THRESHOLD) {
+    const dir = Math.sign(wheelAcc);
+    wheelLastDir = dir;
+    wheelAcc = 0;
+    step(dir);
+    // Lock for 320ms to swallow trackpad inertia decay
+    wheelCooldownUntil = now + 320;
+  }
 }, { passive: false });
 
 addEventListener('keydown', (e) => {
@@ -126,38 +160,88 @@ addEventListener('keydown', (e) => {
   else if (k === 'l') toggleLike();
 });
 
+// Touch and pointer dragging on canvas
 const canvas = $('#gl');
 canvas.addEventListener('pointerdown', (e) => {
   if (!feed.songs.length) return;
   canvas.setPointerCapture?.(e.pointerId);
-  if (!gesture) { gesture = true; anchor = Math.round(target); }
-  drag = { sy: e.clientY, sx: e.clientX, base: target, moved: false, ly: e.clientY, lt: performance.now(), v: 0 };
+  const startIdx = Math.round(target);
+  drag = {
+    pointerId: e.pointerId,
+    sy: e.clientY,
+    sx: e.clientX,
+    startIdx,
+    moved: false,
+    ly: e.clientY,
+    lt: performance.now(),
+    vy: 0,
+    startTime: performance.now()
+  };
 });
+
 addEventListener('pointermove', (e) => {
-  mouse.x = (e.clientX / innerWidth) * 2 - 1; mouse.y = -((e.clientY / innerHeight) * 2 - 1);
-  if (!drag) return;
+  mouse.x = (e.clientX / innerWidth) * 2 - 1;
+  mouse.y = -((e.clientY / innerHeight) * 2 - 1);
+  if (!drag || (drag.pointerId !== undefined && e.pointerId !== drag.pointerId)) return;
+
   const dy = drag.sy - e.clientY;
-  if (Math.abs(dy) > 8 || Math.abs(e.clientX - drag.sx) > 8) drag.moved = true;
+  const dx = drag.sx - e.clientX;
+  if (Math.abs(dy) > 7 || Math.abs(dx) > 7) drag.moved = true;
+
   if (drag.moved) {
-    target = clamp(drag.base + dy / (innerHeight * 0.55), -1, maxIdx());
-    const now = performance.now(), dt = Math.max(1, now - drag.lt);
-    drag.v = drag.v * 0.6 + ((drag.ly - e.clientY) / dt * 1000) * 0.4;
-    drag.ly = e.clientY; drag.lt = now; lastInput = now; seenHint();
+    const now = performance.now();
+    const dt = Math.max(1, now - drag.lt);
+    const instV = (drag.ly - e.clientY) / dt;
+    drag.vy = drag.vy * 0.5 + instV * 0.5;
+    drag.ly = e.clientY;
+    drag.lt = now;
+
+    // While dragging, move target smoothly with finger within [-1.15, 1.15]
+    // so user gets 1:1 tactile visual feedback without wild multi-song flinging
+    const dragSpan = Math.max(260, innerHeight * 0.55);
+    const offset = clamp(dy / dragSpan, -1.15, 1.15);
+    target = clamp(drag.startIdx + offset, -1, maxIdx());
+    lastInput = now;
+    seenHint();
   }
 });
-addEventListener('pointerup', (e) => {
-  if (!drag) return;
-  const d = drag; drag = null;
+
+const endDrag = (e) => {
+  if (!drag || (drag.pointerId !== undefined && e.pointerId !== undefined && e.pointerId !== drag.pointerId)) return;
+  const d = drag;
+  drag = null;
+
   if (d.moved) {
-    target = clamp(target + (d.v / innerHeight) * 0.35, -1, maxIdx());
-    settle();
+    const totalDy = d.sy - e.clientY;
+    const dur = Math.max(1, performance.now() - d.startTime);
+    const avgV = totalDy / dur;
+
+    // Determine if swipe was intentional:
+    // Either moved > 40px or fast flick > 0.35 px/ms with > 16px displacement
+    let delta = 0;
+    if (totalDy > 40 || (d.vy > 0.35 && totalDy > 16) || (avgV > 0.35 && totalDy > 16)) {
+      delta = 1;
+    } else if (totalDy < -40 || (d.vy < -0.35 && totalDy < -16) || (avgV < -0.35 && totalDy < -16)) {
+      delta = -1;
+    }
+
+    // Step at most 1 song from where the touch started!
+    target = clamp(d.startIdx + delta, -1, maxIdx());
+    seenHint();
   } else {
-    gesture = false;
+    // Tap without drag: raycast to pick record
     ray.setFromCamera(new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1), stage.camera);
     const hit = pool.pick(ray);
-    if (hit >= 0) { if (hit === Math.round(target)) player.toggle(); else target = hit; }
+    if (hit >= 0) {
+      if (hit === Math.round(target)) player.toggle();
+      else target = hit;
+    }
   }
-});
+};
+
+addEventListener('pointerup', endDrag);
+addEventListener('pointercancel', endDrag);
+
 addEventListener('dblclick', (e) => {
   if (e.target === canvas && pos > -0.5) { toggleLike(true); burst(e.clientX, e.clientY); }
 });
@@ -188,11 +272,25 @@ els.play.onclick = () => player.toggle();
 $('#next').onclick = () => step(1);
 $('#prev').onclick = () => step(-1);
 $('#mute').onclick = toggleMute;
-$('#seek').addEventListener('pointerdown', (e) => {
-  const r = e.currentTarget.getBoundingClientRect();
-  player.seek((e.clientX - r.left) / r.width);
+const seekEl = $('#seek');
+let seeking = false;
+function updateSeek(e) {
+  const r = seekEl.getBoundingClientRect();
+  const pct = clamp((e.clientX - r.left) / r.width, 0, 1);
+  player.seek(pct);
+}
+seekEl.addEventListener('pointerdown', (e) => {
+  seeking = true;
+  seekEl.setPointerCapture?.(e.pointerId);
+  updateSeek(e);
 });
-$('#seek').addEventListener('keydown', (e) => {
+seekEl.addEventListener('pointermove', (e) => {
+  if (seeking) updateSeek(e);
+});
+const stopSeek = () => { seeking = false; };
+seekEl.addEventListener('pointerup', stopSeek);
+seekEl.addEventListener('pointercancel', stopSeek);
+seekEl.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowRight') { e.stopPropagation(); player.active.currentTime += 5; }
   if (e.key === 'ArrowLeft') { e.stopPropagation(); player.active.currentTime -= 5; }
 });
@@ -226,7 +324,7 @@ function startPlay(i) {
 // ---------- start / vibes ----------
 function leaveHome() {
   if (!feed.songs.length) return;
-  target = 0; gesture = false;
+  target = 0;
   if (pos < -0.5) { uiIdx = -1; }
   setActive(0); startPlay(0);
 }
@@ -244,7 +342,7 @@ async function switchVibe(v, btn) {
   const fromHome = pos < -0.5;
   nav.querySelectorAll('.chip').forEach((c) => c.classList.toggle('on', c === btn));
   if (v === feed.vibe) { if (fromHome) leaveHome(); return; }
-  player.stop(); playingIdx = -1; uiIdx = -1; gesture = false; stable = 0;
+  player.stop(); playingIdx = -1; uiIdx = -1; stable = 0;
   pool.clear(); feed.reset(v);
   target = pos = fromHome ? -1 : -0.3;
   els.loader.hidden = false;
@@ -279,7 +377,6 @@ function frame(now) {
   const dt = Math.min(0.05, (now - lastTime) / 1000); lastTime = now; time += dt; frameN++;
   const songs = feed.songs;
 
-  if (gesture && !drag && now - lastInput > 130) settle();
   pos = damp(pos, target, 5.5, dt);
   vel = damp(vel, (pos - prevPos) / Math.max(dt, 1e-3), 10, dt);
   prevPos = pos;
@@ -293,7 +390,7 @@ function frame(now) {
 
   // the song that reaches the centre starts playing
   if (!home && songs.length) {
-    if (Math.abs(pos - idx) < 0.14 && !gesture && !drag) {
+    if (Math.abs(pos - idx) < 0.14 && !drag) {
       stable += dt;
       if (stable > 0.3 && playingIdx !== idx && !blocked) startPlay(idx);
     } else stable = 0;

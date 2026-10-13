@@ -77,11 +77,15 @@ export function createStage(canvas) {
     camera.fov = 52 + Math.min(Math.abs(vel) * 4, 12);
     camera.updateProjectionMatrix();
     const tanH = Math.tan((camera.fov * Math.PI) / 360);
-    const dist = Math.max(5.5, 6.8 / (2 * tanH * camera.aspect));
+    const isPortrait = camera.aspect < 1.0;
+    const targetWidth = isPortrait ? 4.8 : 6.8;
+    const distByWidth = targetWidth / (2 * tanH * camera.aspect);
+    const dist = isPortrait ? clamp(distByWidth, 5.8, 8.2) : Math.max(5.5, distByWidth);
     const shift = camera.aspect > 1.1 ? -2.7 * homeAmt : 0; // on the home screen the tunnel sits to the right
     const shake = e.bass * 0.02;
-    camera.position.set(a.x + shift + sx * 0.5 + Math.sin(time * 41) * shake, a.y + 0.1 + sy * 0.35, a.z + dist);
-    look.set((a.x + b.x) / 2 + shift, (a.y + b.y) / 2, a.z - 1);
+    const yOffset = isPortrait ? 0.35 : 0.1;
+    camera.position.set(a.x + shift + sx * 0.5 + Math.sin(time * 41) * shake, a.y + yOffset + sy * 0.35, a.z + dist);
+    look.set((a.x + b.x) / 2 + shift, (a.y + b.y) / 2 + (isPortrait ? 0.22 : 0), a.z - 1);
     camera.lookAt(look);
     camera.rotateZ((b.x - a.x) * 0.04 - sx * 0.012);
 

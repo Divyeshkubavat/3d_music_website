@@ -135,8 +135,11 @@ class Rec {
     const sc = lerp(0.78, 1, e) * (1 + (e > 0.85 ? bass * 0.045 : 0)) * appear;
     this.group.scale.setScalar(Math.max(sc, 0.001));
 
-    this.sleeve.position.x = lerp(0, -0.95, e);
-    this.disc.position.x = lerp(0.3, 1.2, e);
+    const isNarrow = typeof window !== 'undefined' && window.innerWidth < 768;
+    const sleeveX = isNarrow ? -0.55 : -0.95;
+    const discX = isNarrow ? 0.75 : 1.2;
+    this.sleeve.position.x = lerp(0, sleeveX, e);
+    this.disc.position.x = lerp(0.3, discX, e);
 
     const live = e > 0.6 && playing;
     const target = live ? 3.6 + bass * 5.5 : e > 0.6 ? 0 : 0.4;
